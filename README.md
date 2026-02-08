@@ -54,44 +54,45 @@ STUDENTS -- (1:N) -- ENROLLMENTS -- (N:1) -- COURSES
 ## Part A: SQL JOINs Implementation
 
 ### 1. INNER JOIN
-Retrieves all enrollments with student and course details for Semester 2 2025.
 ```sql
 SELECT 
     s.student_id,
     s.first_name || ' ' || s.last_name AS student_name,
     c.course_code,
     c.course_name,
-    e.semester, e.year, e.grade, e.status
+    e.semester, e.academic_year, e.grade, e.status
 FROM enrollments e
 INNER JOIN students s ON e.student_id = s.student_id
 INNER JOIN courses c ON e.course_id = c.course_id
-WHERE e.semester = 'Semester 2' AND e.year = 2025
+WHERE e.semester = 'Semester 2' AND e.academic_year = 2025
 ORDER BY s.last_name;
 ```
+<img src="./screenshots/1_inner_join.PNG"><img/>
 
 ### 2. LEFT JOIN
 Finds students who have not enrolled in any courses.
 ```sql
-SELECT 
-    s.student_id, s.first_name || ' ' || s.last_name AS student_name,
-    COUNT(e.enrollment_id) AS total_enrollments
+SELECT
+s.student_id, s.first_name || ' ' || s.last_name AS student_name,
+COUNT(e.enrollment_id) AS total_enrollments
 FROM students s
 LEFT JOIN enrollments e ON s.student_id = e.student_id
 GROUP BY s.student_id, s.first_name, s.last_name
 HAVING COUNT(e.enrollment_id) = 0;
 ```
+<img src="./screenshots/2_left_join.PNG"></img>
 
 ### 3. RIGHT JOIN
 Identifies courses with no student enrollments.
 ```sql
-SELECT 
-    c.course_id, c.course_code, c.course_name,
-    COUNT(e.enrollment_id) AS total_enrollments
-FROM enrollments e
-RIGHT JOIN courses c ON e.course_id = c.course_id
+SELECT c.course_id, c.course_code, c.course_name,
+COUNT(e.enrollment_id) AS total_enrollments
+FROM courses c
+LEFT JOIN enrollments e ON c.course_id = e.course_id
 GROUP BY c.course_id, c.course_code, c.course_name
 HAVING COUNT(e.enrollment_id) = 0;
 ```
+<img src="./screenshots/3_right_join.PNG"></img>
 
 ### 4. FULL OUTER JOIN
 Shows all students and courses including unmatched records.
@@ -111,6 +112,7 @@ FULL OUTER JOIN enrollments e ON s.student_id = e.student_id
 FULL OUTER JOIN courses c ON e.course_id = c.course_id
 WHERE e.enrollment_id IS NULL;
 ```
+<img src="./screenshots/4_full_outer_join.PNG"></img>
 
 ### 5. SELF JOIN
 Finds students from the same region in the same course (for study groups).
@@ -121,13 +123,16 @@ SELECT DISTINCT
     s1.region, c.course_code, c.course_name
 FROM enrollments e1
 INNER JOIN enrollments e2 ON e1.course_id = e2.course_id 
-    AND e1.semester = e2.semester AND e1.year = e2.year
+    AND e1.semester = e2.semester AND e1.academic_year = e2.academic_year
     AND e1.student_id < e2.student_id
 INNER JOIN students s1 ON e1.student_id = s1.student_id
 INNER JOIN students s2 ON e2.student_id = s2.student_id
 INNER JOIN courses c ON e1.course_id = c.course_id
-WHERE s1.region = s2.region AND e1.semester = 'Semester 2' AND e1.year = 2025;
+WHERE s1.region = s2.region 
+  AND e1.semester = 'Semester 2' 
+  AND e1.academic_year = 2025;
 ```
+<img src="./screenshots/5_self_join.PNG"></img>
 
 ---
 
@@ -138,10 +143,12 @@ WHERE s1.region = s2.region AND e1.semester = 'Semester 2' AND e1.year = 2025;
 **ROW_NUMBER()** - Assigns unique sequence numbers to enrollments per semester
 ```sql
 SELECT student_id, course_id, enrollment_date,
-    ROW_NUMBER() OVER (PARTITION BY semester, year ORDER BY enrollment_date) 
+    ROW_NUMBER() OVER (PARTITION BY semester, academic_year ORDER BY enrollment_date) 
     AS enrollment_sequence
-FROM enrollments WHERE year = 2025;
+FROM enrollments 
+WHERE academic_year = 2025;
 ```
+<img src="./screenshots/6_part_b_row_number.PNG"></img>
 
 **RANK() & DENSE_RANK()** - Ranks students by GPA within their region
 ```sql
@@ -153,6 +160,7 @@ INNER JOIN enrollments e ON s.student_id = e.student_id
 WHERE e.grade IS NOT NULL
 GROUP BY s.student_id, s.first_name, s.last_name, s.region;
 ```
+<img src="./screenshots/7_part_b_rank_dense_number.PNG"></img>
 
 **PERCENT_RANK()** - Calculates percentile ranking of student performance
 ```sql
@@ -164,67 +172,76 @@ INNER JOIN enrollments e ON s.student_id = e.student_id
 WHERE e.grade IS NOT NULL
 GROUP BY s.student_id, s.first_name, s.last_name;
 ```
+<img src="./screenshots/8_part_b_percentage_rank.PNG"></img>
 
 ### Category 2: Aggregate Window Functions
 
 **SUM() OVER()** - Calculates cumulative revenue by semester
 ```sql
 WITH semester_revenue AS (
-    SELECT DISTINCT e.semester, e.year,
-        e.semester || ' ' || e.year AS period,
+    SELECT e.semester, e.academic_year,
+        e.semester || ' ' || e.academic_year AS period,
         SUM(c.fee) AS semester_revenue
     FROM enrollments e
     INNER JOIN courses c ON e.course_id = c.course_id
-    GROUP BY e.semester, e.year
+    GROUP BY e.semester, e.academic_year
 )
 SELECT period, semester_revenue,
-    SUM(semester_revenue) OVER (ORDER BY year, semester 
+    SUM(semester_revenue) OVER (ORDER BY academic_year, semester 
         ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS cumulative_revenue
 FROM semester_revenue;
 ```
+<img src="./screenshots/9_part_c_sum_over.PNG"></img>
 
 **AVG() OVER()** - Calculates 3-semester moving average of enrollments
 ```sql
 WITH semester_stats AS (
-    SELECT semester, year, COUNT(*) AS total_enrollments
+    SELECT semester, academic_year, COUNT(*) AS total_enrollments
     FROM enrollments
-    GROUP BY semester, year
+    GROUP BY semester, academic_year
 )
-SELECT semester, year, total_enrollments,
-    ROUND(AVG(total_enrollments) OVER (ORDER BY year, semester 
+SELECT semester, academic_year, total_enrollments,
+    ROUND(AVG(total_enrollments) OVER (ORDER BY academic_year, semester 
         ROWS BETWEEN 2 PRECEDING AND CURRENT ROW), 2) AS moving_avg
 FROM semester_stats;
 ```
+<img src="./screenshots/10_part_c_avg_over.PNG"></img>
 
 ### Category 3: Navigation Functions
 
 **LAG()** - Compares each semester's enrollments with the previous one
 ```sql
 WITH semester_enrollments AS (
-    SELECT semester, year, COUNT(*) AS enrollment_count
+    SELECT semester, academic_year, COUNT(*) AS enrollment_count
     FROM enrollments
-    GROUP BY semester, year
+    GROUP BY semester, academic_year
 )
-SELECT semester, year, enrollment_count,
-    LAG(enrollment_count) OVER (ORDER BY year, semester) AS previous_semester,
-    enrollment_count - LAG(enrollment_count) OVER (ORDER BY year, semester) AS change
+SELECT semester, academic_year, enrollment_count,
+    LAG(enrollment_count) OVER (ORDER BY academic_year, semester) AS previous_semester,
+    enrollment_count - LAG(enrollment_count) OVER (ORDER BY academic_year, semester) AS change
 FROM semester_enrollments;
 ```
+<img src="./screenshots/11_part_c_lag.PNG"></img>
 
 **LEAD()** - Looks ahead to the next semester
 ```sql
-SELECT semester, year, enrollment_count,
-    LEAD(enrollment_count) OVER (ORDER BY year, semester) AS next_semester,
+WITH semester_enrollments AS (
+    SELECT semester, academic_year, COUNT(*) AS enrollment_count
+    FROM enrollments
+    GROUP BY semester, academic_year
+)
+SELECT semester, academic_year, enrollment_count,
+    LEAD(enrollment_count) OVER (ORDER BY academic_year, semester) AS next_semester,
     CASE 
-        WHEN LEAD(enrollment_count) OVER (ORDER BY year, semester) > enrollment_count 
+        WHEN LEAD(enrollment_count) OVER (ORDER BY academic_year, semester) > enrollment_count 
             THEN 'Growing'
-        WHEN LEAD(enrollment_count) OVER (ORDER BY year, semester) < enrollment_count 
+        WHEN LEAD(enrollment_count) OVER (ORDER BY academic_year, semester) < enrollment_count 
             THEN 'Declining'
         ELSE 'Stable'
     END AS trend
-FROM (SELECT semester, year, COUNT(*) AS enrollment_count
-      FROM enrollments GROUP BY semester, year);
+FROM semester_enrollments;
 ```
+<img src="./screenshots/12_part_c_lead.PNG"></img>
 
 ### Category 4: Distribution Functions
 
@@ -242,6 +259,7 @@ SELECT student_id, name, gpa,
     NTILE(4) OVER (ORDER BY gpa DESC) AS quartile
 FROM student_performance;
 ```
+<img src="./screenshots/13_part_c_n_tile.PNG"></img>
 
 **CUME_DIST()** - Calculates cumulative percentile distribution
 ```sql
@@ -253,6 +271,7 @@ INNER JOIN enrollments e ON s.student_id = e.student_id
 WHERE e.grade IS NOT NULL
 GROUP BY s.student_id, s.first_name, s.last_name;
 ```
+<img src="./screenshots/14_part_c_cume_dist.PNG"></img>
 
 ---
 
@@ -291,8 +310,6 @@ GROUP BY s.student_id, s.first_name, s.last_name;
 
 - Oracle Database SQL Language Reference 21c - Window Functions
 - PostgreSQL Window Functions Documentation
-- Database Design for Mere Mortals (Hernandez, 2013)
-- Class lecture notes: INSY 8311
 
 ---
 

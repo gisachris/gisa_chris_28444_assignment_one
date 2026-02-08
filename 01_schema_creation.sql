@@ -4,14 +4,27 @@
 -- Assignment: SQL JOINs & Window Functions
 -- =====================================================
 
--- Drop existing tables if they exist
-DROP TABLE enrollments CASCADE CONSTRAINTS;
-DROP TABLE students CASCADE CONSTRAINTS;
-DROP TABLE courses CASCADE CONSTRAINTS;
+-- Drop tables safely (Oracle style)
+BEGIN
+    EXECUTE IMMEDIATE 'DROP TABLE enrollments CASCADE CONSTRAINTS';
+EXCEPTION WHEN OTHERS THEN NULL;
+END;
+/
+
+BEGIN
+    EXECUTE IMMEDIATE 'DROP TABLE students CASCADE CONSTRAINTS';
+EXCEPTION WHEN OTHERS THEN NULL;
+END;
+/
+
+BEGIN
+    EXECUTE IMMEDIATE 'DROP TABLE courses CASCADE CONSTRAINTS';
+EXCEPTION WHEN OTHERS THEN NULL;
+END;
+/
 
 -- =====================================================
 -- TABLE 1: STUDENTS
--- Stores student information including demographics
 -- =====================================================
 CREATE TABLE students (
     student_id NUMBER(10) PRIMARY KEY,
@@ -26,7 +39,6 @@ CREATE TABLE students (
 
 -- =====================================================
 -- TABLE 2: COURSES
--- Stores course catalog with pricing and credits
 -- =====================================================
 CREATE TABLE courses (
     course_id NUMBER(10) PRIMARY KEY,
@@ -41,7 +53,6 @@ CREATE TABLE courses (
 
 -- =====================================================
 -- TABLE 3: ENROLLMENTS
--- Stores student course registrations and grades
 -- =====================================================
 CREATE TABLE enrollments (
     enrollment_id NUMBER(10) PRIMARY KEY,
@@ -49,29 +60,32 @@ CREATE TABLE enrollments (
     course_id NUMBER(10) NOT NULL,
     enrollment_date DATE NOT NULL,
     semester VARCHAR2(20) NOT NULL,
-    year NUMBER(4) NOT NULL,
+    academic_year NUMBER(4) NOT NULL,
     grade NUMBER(5,2),
     status VARCHAR2(20) DEFAULT 'Active',
-    CONSTRAINT fk_enrollment_student FOREIGN KEY (student_id) 
+
+    CONSTRAINT fk_enr_student FOREIGN KEY (student_id)
         REFERENCES students(student_id) ON DELETE CASCADE,
-    CONSTRAINT fk_enrollment_course FOREIGN KEY (course_id) 
+
+    CONSTRAINT fk_enr_course FOREIGN KEY (course_id)
         REFERENCES courses(course_id) ON DELETE CASCADE,
+
     CONSTRAINT chk_grade CHECK (grade BETWEEN 0 AND 100),
     CONSTRAINT chk_status CHECK (status IN ('Active', 'Completed', 'Withdrawn', 'Failed'))
 );
 
 -- =====================================================
--- SEQUENCES FOR AUTO-INCREMENT IDs
+-- SEQUENCES
 -- =====================================================
 CREATE SEQUENCE seq_student_id START WITH 1001 INCREMENT BY 1;
 CREATE SEQUENCE seq_course_id START WITH 2001 INCREMENT BY 1;
 CREATE SEQUENCE seq_enrollment_id START WITH 3001 INCREMENT BY 1;
 
 -- =====================================================
--- INDEXES FOR PERFORMANCE
+-- INDEXES
 -- =====================================================
 CREATE INDEX idx_student_region ON students(region);
-CREATE INDEX idx_enrollment_semester ON enrollments(semester, year);
+CREATE INDEX idx_enrollment_sem_year ON enrollments(semester, academic_year);
 CREATE INDEX idx_course_department ON courses(department);
 
 COMMIT;
