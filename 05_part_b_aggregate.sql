@@ -1,29 +1,26 @@
 -- =====================================================
--- PART B: WINDOW FUNCTIONS IMPLEMENTATION
+-- PART C: WINDOW FUNCTIONS IMPLEMENTATION
 -- Category 2: AGGREGATE WINDOW FUNCTIONS
 -- =====================================================
 
 -- =====================================================
--- AGGREGATE 1: SUM() OVER() - Running Total
--- Business Purpose: Calculate cumulative enrollment revenue by semester
--- Use Case: Track semester-by-semester revenue growth for financial planning
--- Frame: ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+-- AGGREGATE 1: SUM() OVER() - Running Total Revenue
 -- =====================================================
 WITH semester_revenue AS (
-    SELECT DISTINCT
+    SELECT 
         e.semester,
-        e.year,
-        e.semester || ' ' || e.year AS period,
+        e.academic_year,
+        e.semester || ' ' || e.academic_year AS period,
         SUM(c.fee) AS semester_revenue
     FROM enrollments e
     INNER JOIN courses c ON e.course_id = c.course_id
-    GROUP BY e.semester, e.year
+    GROUP BY e.semester, e.academic_year
 )
 SELECT 
     period,
     semester_revenue,
     SUM(semester_revenue) OVER (
-        ORDER BY year, semester
+        ORDER BY academic_year, semester
         ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
     ) AS cumulative_revenue,
     ROUND(
@@ -31,26 +28,21 @@ SELECT
         2
     ) AS pct_of_total_revenue
 FROM semester_revenue
-ORDER BY year, semester;
-
--- Calculates running total revenue across semesters using a ROWS frame.
+ORDER BY academic_year, semester;
 
 
 -- =====================================================
--- AGGREGATE 2: AVG() OVER() - Moving Average
--- Business Purpose: Calculate 3-semester moving average of enrollments
--- Use Case: Smooth enrollment trends to identify growth patterns
--- Frame: ROWS BETWEEN 2 PRECEDING AND CURRENT ROW
+-- AGGREGATE 2: AVG() OVER() - 3-Semester Moving Average
 -- =====================================================
 WITH semester_stats AS (
     SELECT 
         semester,
-        year,
-        semester || ' ' || year AS period,
+        academic_year,
+        semester || ' ' || academic_year AS period,
         COUNT(DISTINCT student_id) AS unique_students,
         COUNT(*) AS total_enrollments
     FROM enrollments
-    GROUP BY semester, year
+    GROUP BY semester, academic_year
 )
 SELECT 
     period,
@@ -58,31 +50,24 @@ SELECT
     total_enrollments,
     ROUND(
         AVG(total_enrollments) OVER (
-            ORDER BY year, semester
+            ORDER BY academic_year, semester
             ROWS BETWEEN 2 PRECEDING AND CURRENT ROW
         ), 
         2
     ) AS three_semester_moving_avg,
     ROUND(
         total_enrollments - AVG(total_enrollments) OVER (
-            ORDER BY year, semester
+            ORDER BY academic_year, semester
             ROWS BETWEEN 2 PRECEDING AND CURRENT ROW
         ), 
         2
     ) AS deviation_from_avg
 FROM semester_stats
-ORDER BY year, semester;
-
--- Moving average helps identify enrollment trends smoothly.
--- Using ROWS frame looks at exactly 3 data points (current + 2 preceding semesters).
--- Positive deviations indicate growing enrollment; negative suggests declining interest.
+ORDER BY academic_year, semester;
 
 
 -- =====================================================
 -- AGGREGATE 3: MAX() and MIN() OVER() with RANGE
--- Business Purpose: Compare student grades to cohort performance bounds
--- Use Case: Identify students significantly above/below peer performance
--- Frame: RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
 -- =====================================================
 SELECT 
     s.student_id,
@@ -91,14 +76,8 @@ SELECT
     c.course_name,
     e.grade AS student_grade,
     ROUND(AVG(e.grade) OVER (PARTITION BY e.course_id), 2) AS course_avg,
-    MAX(e.grade) OVER (
-        PARTITION BY e.course_id 
-        RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
-    ) AS course_max,
-    MIN(e.grade) OVER (
-        PARTITION BY e.course_id 
-        RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
-    ) AS course_min,
+    MAX(e.grade) OVER (PARTITION BY e.course_id) AS course_max,
+    MIN(e.grade) OVER (PARTITION BY e.course_id) AS course_min,
     ROUND(e.grade - AVG(e.grade) OVER (PARTITION BY e.course_id), 2) AS deviation_from_avg,
     CASE 
         WHEN e.grade >= AVG(e.grade) OVER (PARTITION BY e.course_id) + 10 THEN 'Outstanding'
@@ -110,20 +89,12 @@ FROM enrollments e
 INNER JOIN students s ON e.student_id = s.student_id
 INNER JOIN courses c ON e.course_id = c.course_id
 WHERE e.grade IS NOT NULL 
-    AND e.year = 2025
+    AND e.academic_year = 2025
 ORDER BY c.course_code, e.grade DESC;
-
--- INTERPRETATION:
--- RANGE frame considers all rows with the same value (partition) for comparison.
--- This identifies outlier students performing significantly above/below course averages.
--- Students with +10 deviation are "Outstanding"; below -10 need academic intervention.
 
 
 -- =====================================================
--- AGGREGATE 4: COUNT() OVER() - Student Engagement Level
--- Business Purpose: Count courses taken per student with percentile comparison
--- Use Case: Identify highly engaged vs. minimally engaged students
--- Frame: ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
+-- AGGREGATE 4: COUNT() OVER() - Student Engagement
 -- =====================================================
 WITH student_engagement AS (
     SELECT 
@@ -144,12 +115,10 @@ SELECT
     program,
     courses_enrolled,
     avg_grade,
-    AVG(courses_enrolled) OVER (
-        ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
-    ) AS institution_avg_courses,
+    AVG(courses_enrolled) OVER () AS institution_avg_courses,
     ROUND(
-        (courses_enrolled - AVG(courses_enrolled) OVER ()) * 100.0 / 
-        NULLIF(AVG(courses_enrolled) OVER (), 0), 
+        (courses_enrolled - AVG(courses_enrolled) OVER ()) * 100.0 /
+        NULLIF(AVG(courses_enrolled) OVER (), 0),
         2
     ) AS pct_deviation_from_avg,
     CASE 
@@ -161,17 +130,9 @@ SELECT
 FROM student_engagement
 ORDER BY courses_enrolled DESC, avg_grade DESC;
 
--- INTERPRETATION:
--- ROWS frame with UNBOUNDED calculates overall institution averages across all students.
--- Identifies students taking 50%+ more courses than average as "Highly Engaged".
--- Students with zero enrollments flagged as "Inactive" for retention interventions.
-
 
 -- =====================================================
--- AGGREGATE 5: Combined Aggregates - Department Financial Analysis
--- Business Purpose: Multi-metric department performance dashboard
--- Use Case: Compare departments by revenue, enrollments, and efficiency
--- Frame: Multiple frames for comprehensive analysis
+-- AGGREGATE 5: Combined Aggregates - Department Dashboard
 -- =====================================================
 WITH dept_metrics AS (
     SELECT 
@@ -193,27 +154,13 @@ SELECT
     avg_course_fee,
     total_revenue,
     dept_avg_grade,
-    ROUND(
-        total_revenue * 100.0 / SUM(total_revenue) OVER (), 
-        2
-    ) AS pct_of_total_revenue,
-    ROUND(
-        total_enrollments * 100.0 / SUM(total_enrollments) OVER (), 
-        2
-    ) AS pct_of_total_enrollments,
-    ROUND(
-        dept_avg_grade - AVG(dept_avg_grade) OVER (), 
-        2
-    ) AS grade_deviation_from_avg,
+    ROUND(total_revenue * 100.0 / SUM(total_revenue) OVER (), 2) AS pct_of_total_revenue,
+    ROUND(total_enrollments * 100.0 / SUM(total_enrollments) OVER (), 2) AS pct_of_total_enrollments,
+    ROUND(dept_avg_grade - AVG(dept_avg_grade) OVER (), 2) AS grade_deviation_from_avg,
     RANK() OVER (ORDER BY total_revenue DESC) AS revenue_rank,
     RANK() OVER (ORDER BY dept_avg_grade DESC) AS academic_rank
 FROM dept_metrics
 ORDER BY total_revenue DESC;
-
--- INTERPRETATION:
--- Comprehensive department comparison using multiple aggregate window functions.
--- Computer Science leads in revenue (29.8%) and enrollments (30.3%) but not grades.
--- Data Science shows highest academic performance despite lower enrollment share.
 
 -- =====================================================
 -- END OF CATEGORY 2: AGGREGATE WINDOW FUNCTIONS

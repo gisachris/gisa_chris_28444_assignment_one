@@ -5,8 +5,6 @@
 
 -- =====================================================
 -- DISTRIBUTION 1: NTILE(4) - Student Performance Quartiles
--- Business Purpose: Segment students into 4 performance quartiles
--- Use Case: Targeted academic interventions and scholarship allocation
 -- =====================================================
 WITH student_performance AS (
     SELECT 
@@ -44,17 +42,21 @@ SELECT
 FROM student_performance
 ORDER BY performance_quartile, gpa DESC;
 
--- INTERPRETATION:
--- NTILE(4) divides students into 4 equal-sized groups based on GPA.
--- Q1 (top 25%) qualifies for presidential scholarships; Q4 (bottom 25%) needs tutoring.
--- This ensures equitable resource distribution across all performance levels.
-
 
 -- =====================================================
 -- DISTRIBUTION 2: NTILE(3) - Course Fee Pricing Tiers
--- Business Purpose: Categorize courses into low/medium/high price tiers
--- Use Case: Financial aid allocation and affordability analysis
 -- =====================================================
+WITH price_tiers AS (
+    SELECT 
+        course_id,
+        course_code,
+        course_name,
+        department,
+        credits,
+        fee,
+        NTILE(3) OVER (ORDER BY fee) AS price_tier
+    FROM courses
+)
 SELECT 
     course_id,
     course_code,
@@ -62,31 +64,24 @@ SELECT
     department,
     credits,
     fee,
-    NTILE(3) OVER (ORDER BY fee) AS price_tier,
-    CASE NTILE(3) OVER (ORDER BY fee)
+    price_tier,
+    CASE price_tier
         WHEN 1 THEN 'Low-Cost Tier'
         WHEN 2 THEN 'Mid-Cost Tier'
         WHEN 3 THEN 'High-Cost Tier'
     END AS tier_name,
-    CASE NTILE(3) OVER (ORDER BY fee)
+    CASE price_tier
         WHEN 1 THEN 'Prioritize for students on financial aid'
         WHEN 2 THEN 'Balanced accessibility'
         WHEN 3 THEN 'May require special scholarships or payment plans'
     END AS financial_recommendation,
-    COUNT(*) OVER (PARTITION BY NTILE(3) OVER (ORDER BY fee)) AS courses_in_tier
-FROM courses
+    COUNT(*) OVER (PARTITION BY price_tier) AS courses_in_tier
+FROM price_tiers
 ORDER BY price_tier, fee;
-
--- INTERPRETATION:
--- NTILE(3) creates three equal pricing tiers to guide financial aid decisions.
--- High-cost tier courses (Tier 3) like Deep Learning and Quantum Computing may need
--- payment plans. Low-cost tier (Tier 1) courses are more accessible to aid recipients.
 
 
 -- =====================================================
 -- DISTRIBUTION 3: CUME_DIST() - Cumulative Grade Distribution
--- Business Purpose: Calculate cumulative percentile distribution of student grades
--- Use Case: Determine grade cutoffs for honors and academic probation
 -- =====================================================
 WITH grade_distribution AS (
     SELECT 
@@ -121,16 +116,9 @@ SELECT
 FROM grade_distribution
 ORDER BY gpa DESC;
 
--- INTERPRETATION:
--- CUME_DIST() calculates the proportion of students with GPA ≤ current student's GPA.
--- Students in top 10% (≥90th percentile) earn Summa Cum Laude honors.
--- Bottom 15% receive mandatory counseling; bottom 30% are offered tutoring.
-
 
 -- =====================================================
 -- DISTRIBUTION 4: NTILE() by Region - Regional Performance Equity
--- Business Purpose: Divide students into quartiles WITHIN each region
--- Use Case: Ensure regional equity in scholarship distribution
 -- =====================================================
 WITH regional_performance AS (
     SELECT 
@@ -162,30 +150,23 @@ SELECT
 FROM regional_performance
 ORDER BY region, regional_quartile, gpa DESC;
 
--- INTERPRETATION:
--- NTILE(4) with PARTITION BY region ensures each region gets top performers identified.
--- Prevents all scholarships going to students from one high-performing region.
--- A student might be Q1 regionally but Q2 nationally - still earns regional scholarship.
-
 
 -- =====================================================
 -- DISTRIBUTION 5: CUME_DIST() for Enrollment Timing
--- Business Purpose: Analyze how early/late students register each semester
--- Use Case: Optimize registration periods and identify priority registration needs
 -- =====================================================
 WITH registration_timing AS (
     SELECT 
         e.enrollment_id,
         s.student_id,
         s.first_name || ' ' || s.last_name AS student_name,
-        e.semester || ' ' || e.year AS period,
+        e.semester || ' ' || e.academic_year AS period,
         e.enrollment_date,
         e.enrollment_date - MIN(e.enrollment_date) OVER (
-            PARTITION BY e.semester, e.year
+            PARTITION BY e.semester, e.academic_year
         ) AS days_after_registration_opens
     FROM enrollments e
     INNER JOIN students s ON e.student_id = s.student_id
-    WHERE e.year = 2025
+    WHERE e.academic_year = 2025
 )
 SELECT 
     student_id,
@@ -210,16 +191,9 @@ SELECT
 FROM registration_timing
 ORDER BY period, registration_percentile;
 
--- INTERPRETATION:
--- CUME_DIST() shows what percentage of students registered before each student.
--- Early registrants (top 25%) could receive priority add/drop or course selection.
--- Late registrants (bottom 25%) face closed courses - system could send reminders.
-
 
 -- =====================================================
--- DISTRIBUTION 6: Combined NTILE and CUME_DIST - Comprehensive Student Segmentation
--- Business Purpose: Multi-dimensional student classification for holistic support
--- Use Case: Integrated academic and engagement intervention strategies
+-- DISTRIBUTION 6: Combined NTILE and CUME_DIST - Student Segmentation
 -- =====================================================
 WITH student_metrics AS (
     SELECT 
@@ -273,13 +247,3 @@ SELECT
     END AS recommended_intervention
 FROM student_metrics
 ORDER BY performance_quartile, engagement_quartile;
-
--- INTERPRETATION:
--- Combines NTILE and CUME_DIST to create a 2-dimensional student classification matrix.
--- "Star Students" (Q1 performance + Q1 engagement) get leadership opportunities.
--- "At-Risk" students (Q4 + Q4) need immediate multi-layered intervention.
--- This holistic view prevents one-size-fits-all support and targets specific needs.
-
--- =====================================================
--- END OF CATEGORY 4: DISTRIBUTION FUNCTIONS
--- =====================================================
